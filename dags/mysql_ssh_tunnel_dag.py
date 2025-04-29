@@ -9,6 +9,8 @@ import pymysql
 import pandas as pd
 import os
 from google.cloud import bigquery
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.datasets import Dataset
 
 # BigQuery configuration
 PROJECT_ID = "jse-datasphere"  # Replace with your GCP project ID
@@ -230,6 +232,9 @@ def load_to_bigquery(**context):
         logger.error(f"Error loading to BigQuery: {str(e)}")
         raise
 
+# Define the BigQuery asset
+bq_dataset = Dataset("bq://jse-datasphere/jse_seeds/financial_documents")
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -256,6 +261,7 @@ with DAG(
     load_task = PythonOperator(
         task_id='load_to_bigquery',
         python_callable=load_to_bigquery,
+        outlets=[bq_dataset],
     )
     
     # Set task dependencies
