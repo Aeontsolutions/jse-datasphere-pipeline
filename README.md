@@ -69,26 +69,58 @@ jse-datasphere-pipeline/
 
 5. **Airflow Connections Setup**
    
-   Configure the following connections in Airflow UI:
+   The project includes an automated connection setup script. To use it:
 
-   a. **MySQL Connection (`jse_mysql`)**
-   - Connection Type: MySQL
-   - Host: [MySQL host]
-   - Schema: [Database name]
-   - Login: [MySQL username]
-   - Password: [MySQL password]
-   - Port: [MySQL port, default 3306]
+   a. **Create Required Directories**
+   ```bash
+   mkdir -p config ssh_keys
+   ```
 
-   b. **SSH Tunnel Connection (`jse_ssh_tunnel`)**
-   - Connection Type: SSH
-   - Host: [SSH host]
-   - Username: [SSH username]
-   - Port: [SSH port, default 22]
+   b. **Set Up Credentials**
+   - Copy your GCP service account JSON to `config/credentials.json`
+   - Place your SSH private key in `ssh_keys/id_rsa`
+   - Set proper permissions:
+     ```bash
+     chmod 600 ssh_keys/id_rsa
+     ```
 
-   c. **BigQuery Connection (`google_cloud_default`)**
-   - Connection Type: Google Cloud
-   - Project ID: jse-datasphere
-   - Keyfile Path or Keyfile JSON: [Your GCP credentials]
+   c. **Prepare Connection Script**
+   ```bash
+   # Copy the example script
+   cp scripts/setup_connections.example.sh scripts/setup_connections.sh
+   
+   # Make it executable
+   chmod +x scripts/setup_connections.sh
+   ```
+
+   d. **Update Connection Details**
+   Edit `scripts/setup_connections.sh` and update the following variables with your values:
+   ```bash
+   # MySQL Connection Details
+   MYSQL_HOST="your_host"
+   MYSQL_DB="your_database"
+   MYSQL_USER="your_username"
+   MYSQL_PASSWORD="your_password"
+   
+   # SSH Tunnel Details
+   SSH_HOST="your.ssh.host"
+   SSH_USER="your_ssh_user"
+   
+   # BigQuery Details
+   GCP_PROJECT_ID="your-project-id"
+   ```
+
+   e. **Run the Setup Script**
+   ```bash
+   ./scripts/setup_connections.sh
+   ```
+
+   This will create all necessary connections:
+   - MySQL Connection (`jse_mysql`)
+   - SSH Tunnel Connection (`jse_ssh_tunnel`)
+   - BigQuery Connection (`google_cloud_default`)
+
+   Verify the connections in the Airflow UI after running the script.
 
 ## Environment Variables
 

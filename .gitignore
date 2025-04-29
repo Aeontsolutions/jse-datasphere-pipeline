@@ -16,6 +16,9 @@ ssh_keys/
 google_credentials.json
 .env
 
+# Local scripts with sensitive data
+scripts/setup_connections.sh
+
 # Python
 __pycache__/
 *.py[cod]
