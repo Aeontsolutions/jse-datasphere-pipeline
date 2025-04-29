@@ -1,0 +1,76 @@
+---
+description: When working on Airflow related tasks
+globs: 
+alwaysApply: false
+---
+# Airflow Docker Compose Setup
+
+This project uses Docker Compose to deploy Apache Airflow. The main configuration is in `docker-compose.yml`, which defines the 
+- Airflow webserver (port 8080)
+- Airflow scheduler
+- Airflow worker (Celery)
+- PostgreSQL (metadata database)
+- Redis (message broker)
+
+## Important Directories
+- `dags/`: Place your Airflow DAGs here
+- `logs/`: Airflow logs are stored here
+- `plugins/`: Custom Airflow plugins go here
+- `config/`: Additional Airflow configuration files
+
+## Default Credentials
+- Web UI: http://localhost:8080
+- Username: `admin`
+- `admin`
+
+## Common Commands
+```bash
+# Start all services
+docker compose up -d
+
+# Stop all services
+docker compose down
+
+# View logs
+docker compose logs [service-name] -f
+
+# Restart a specific service
+docker compose restart [service-name]
+
+# Create a new admin user
+docker compose run --rm airflow-webserver airflow users create \
+    --username admin \
+    --firstname admin \
+    --lastname admin \
+    --email admin@example.com \
+    --role Admin \
+    --password admin
+```
+
+## Configuration Notes
+- The setup uses Celery executor for distributed task execution
+- PostgreSQL data is persisted using a named volume (`postgres-db-volume`)
+- Default configuration is in the `x-airflow-common` section of docker-compose.yml
+
+## Web Interface
+- URL: http://localhost:8080
+- Default credentials: admin/admin
+
+## Security Notes
+- Change default credentials before deploying to production
+- Set a secure Fernet key in production
+- Update database and Redis passwords for production use
+- Configure SSL if exposed to the internet
+- Never commit SSH keys or credentials
+- Use Airflow connections for sensitive data
+- Keep private key permissions restricted
+- Monitor access through Airflow UI 
+
+## Troubleshooting
+- If authentication issues occur, try recreating the admin user using the command above
+- Check service health with `docker compose ps`
+- View specific service logs with `docker compose logs [service-name]` 
+- SSH tunnel errors often relate to key permissions or mounting
+- MySQL connection errors usually indicate credential or host configuration issues
+- Check worker logs for detailed error messages
+- Ensure all required services (Redis, PostgreSQL) are running
