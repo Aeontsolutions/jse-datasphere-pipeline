@@ -6,6 +6,7 @@ webserver_config.py
 airflow-webserver.pid
 standalone_admin_password.txt
 airflow.cfg.orig
+config/
 
 # SSH Keys and Credentials
 ssh_keys/
@@ -81,4 +82,7 @@ docker-compose.override.yml
 
 # Logs
 *.log
-*.log.* 
+*.log.*
+
+# Environment variables
+.env 

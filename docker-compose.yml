@@ -3,24 +3,28 @@ x-airflow-common: &airflow-common
   build: .
   environment:
     &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
-    AIRFLOW__CORE__FERNET_KEY: 'dKJYtTNPQOOSuhUFqiIuTXLIJiBlsw71AhLN5xRuZso='
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+    AIRFLOW__CELERY__RESULT_BACKEND: ${AIRFLOW__CELERY__RESULT_BACKEND}
+    AIRFLOW__CELERY__BROKER_URL: ${AIRFLOW__CELERY__BROKER_URL}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES}
+    AIRFLOW__API__AUTH_BACKENDS: ${AIRFLOW__API__AUTH_BACKENDS}
+    AIRFLOW__CORE__SECURE_MODE: ${AIRFLOW__CORE__SECURE_MODE}
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: ${AIRFLOW__WEBSERVER__EXPOSE_CONFIG}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__WORKERS: 4
+    AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: 30
+    AIRFLOW__WEBSERVER__WORKER_TIMEOUT: 120
+    AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: ('airflow.providers.mysql.hooks.mysql.MySqlHook', 'airflow.providers.ssh.hooks.ssh.SSHHook')
     AIRFLOW__CORE__TEST_CONNECTION: 'true'
-    AIRFLOW__CORE__SECURE_MODE: 'true'
-    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'false'
-    AIRFLOW__CORE__TEST_CONNECTION_ENABLE_EXAMPLES: 'true'
+    AIRFLOW__CORE__SECURITY_MANAGER_CLASS: 'airflow.www.security.AirflowSecurityManager'
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
-    - ./config:/opt/airflow/config
     - ./ssh_keys:/opt/airflow/ssh_keys
-  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
+  user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -32,19 +36,21 @@ services:
   postgres:
     image: postgres:13
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 5s
       retries: 5
     restart: always
 
   redis:
     image: redis:latest
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     expose:
       - 6379
     healthcheck:
@@ -104,12 +110,12 @@ services:
         chown -R "${AIRFLOW_UID}:${AIRFLOW_GID}" /opt/airflow/{logs,dags,plugins}
         exec airflow db init && \
         airflow users create \
-          --username admin \
-          --firstname admin \
-          --lastname admin \
-          --email admin@example.com \
+          --username ${ADMIN_USERNAME} \
+          --firstname ${ADMIN_FIRSTNAME} \
+          --lastname ${ADMIN_LASTNAME} \
+          --email ${ADMIN_EMAIL} \
           --role Admin \
-          --password admin
+          --password ${ADMIN_PASSWORD}
     environment:
       <<: *airflow-common-env
     depends_on:

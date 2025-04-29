@@ -22,12 +22,12 @@ The pipeline currently includes:
 
 ```
 jse-datasphere-pipeline/
-├── dags/
-│   └── mysql_ssh_tunnel_dag.py    # Main DAG for MySQL data extraction
+├── dags/                          # Airflow DAG files
 ├── logs/                          # Airflow logs directory
 ├── plugins/                       # Custom Airflow plugins
 ├── ssh_keys/                      # SSH keys for tunnel authentication
 ├── docker-compose.yml             # Docker Compose configuration
+├── env.template                   # Template for environment variables
 └── README.md                      # This file
 ```
 
@@ -39,7 +39,22 @@ jse-datasphere-pipeline/
    cd jse-datasphere-pipeline
    ```
 
-2. **SSH Key Configuration**
+2. **Environment Setup**
+   ```bash
+   # Create your environment file
+   cp env.template .env
+   
+   # Generate a Fernet key for encryption
+   python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+   
+   # Update the .env file with your values:
+   # - Add the generated Fernet key
+   # - Set database credentials
+   # - Configure admin user details
+   # - Adjust other settings as needed
+   ```
+
+3. **SSH Key Configuration**
    - Place your SSH private key in the `ssh_keys` directory
    - Ensure the key is named `id_rsa`
    - Set proper permissions:
@@ -47,9 +62,14 @@ jse-datasphere-pipeline/
      chmod 600 ssh_keys/id_rsa
      ```
 
-3. **Airflow Connections Setup**
+4. **Start the Environment**
+   ```bash
+   docker compose up -d
+   ```
+
+5. **Airflow Connections Setup**
    
-   Configure the following connections in Airflow:
+   Configure the following connections in Airflow UI:
 
    a. **MySQL Connection (`jse_mysql`)**
    - Connection Type: MySQL
@@ -70,10 +90,33 @@ jse-datasphere-pipeline/
    - Project ID: jse-datasphere
    - Keyfile Path or Keyfile JSON: [Your GCP credentials]
 
-4. **Start the Environment**
-   ```bash
-   docker compose up -d
-   ```
+## Environment Variables
+
+Key environment variables in `.env`:
+
+```bash
+# Core Settings
+AIRFLOW_FERNET_KEY=                # Required for encryption
+AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+AIRFLOW__CORE__LOAD_EXAMPLES=false
+AIRFLOW__CORE__SECURE_MODE=true
+
+# Database Settings
+POSTGRES_USER=airflow
+POSTGRES_PASSWORD=<your-password>
+POSTGRES_DB=airflow
+
+# Redis Settings
+REDIS_PASSWORD=<optional-password>
+
+# Admin User
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<your-password>
+ADMIN_EMAIL=admin@example.com
+
+# Additional Settings
+AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES=('airflow.providers.mysql.hooks.mysql.MySqlHook', 'airflow.providers.ssh.hooks.ssh.SSHHook')
+```
 
 ## Monitoring and Maintenance
 
