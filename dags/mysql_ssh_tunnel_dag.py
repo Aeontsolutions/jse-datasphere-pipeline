@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.decorators import task
 from airflow.hooks.base import BaseHook
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook
@@ -9,7 +9,6 @@ import pymysql
 import pandas as pd
 import os
 from google.cloud import bigquery
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.datasets import Dataset
 
 # BigQuery configuration
@@ -17,6 +16,10 @@ PROJECT_ID = "jse-datasphere"  # Replace with your GCP project ID
 DATASET_ID = "jse_seeds"
 TABLE_ID = "financial_documents"
 
+# Define the BigQuery asset
+bq_dataset = Dataset("bq://jse-datasphere/jse_seeds/financial_documents")
+
+@task
 def get_connection_configs():
     # Get MySQL connection details
     mysql_conn = BaseHook.get_connection('jse_mysql')
@@ -97,40 +100,57 @@ where
 order by post_date
 """
 
+@task
 def execute_mysql_query_over_ssh(**context):
     logger = LoggingMixin().log
     logger.info("Starting MySQL SSH tunnel task execution")
     
-    # Get connection configurations
+    # Get connection configurations from XCom
     logger.info("Fetching connection configurations")
-    ssh_config, mysql_config = get_connection_configs()
+    ti = context['task_instance']
+    configs = ti.xcom_pull(task_ids='get_connection_configs')
+    ssh_config = configs[0]  # First item in the returned tuple
+    mysql_config = configs[1]  # Second item in the returned tuple
+    
+    # Log configuration details (excluding sensitive info)
+    logger.info(f"SSH Config - Host: {ssh_config['ssh_host']}, Port: {ssh_config['ssh_port']}, User: {ssh_config['ssh_username']}")
+    logger.info(f"MySQL Config - Host: {mysql_config['mysql_host']}, Port: {mysql_config['mysql_port']}, Database: {mysql_config['mysql_database']}")
     
     # Ensure SSH key has correct permissions
     if os.path.exists(ssh_config['ssh_private_key']):
+        current_perms = oct(os.stat(ssh_config['ssh_private_key']).st_mode)[-3:]
+        logger.info(f"Current SSH key permissions: {current_perms}")
         os.chmod(ssh_config['ssh_private_key'], 0o600)
-        logger.info("SSH key permissions set correctly")
+        new_perms = oct(os.stat(ssh_config['ssh_private_key']).st_mode)[-3:]
+        logger.info(f"Updated SSH key permissions: {new_perms}")
     else:
-        logger.warning(f"SSH key not found at {ssh_config['ssh_private_key']}")
+        logger.error(f"SSH key not found at {ssh_config['ssh_private_key']}")
+        raise FileNotFoundError(f"SSH key not found at {ssh_config['ssh_private_key']}")
 
     logger.info("Establishing SSH tunnel")
-    with SSHTunnelForwarder(
-        (ssh_config['ssh_host'], ssh_config['ssh_port']),
-        ssh_username=ssh_config['ssh_username'],
-        ssh_pkey=ssh_config['ssh_private_key'],
-        remote_bind_address=(mysql_config['mysql_host'], mysql_config['mysql_port'])
-    ) as tunnel:
+    try:
+        tunnel = SSHTunnelForwarder(
+            (ssh_config['ssh_host'], ssh_config['ssh_port']),
+            ssh_username=ssh_config['ssh_username'],
+            ssh_pkey=ssh_config['ssh_private_key'],
+            remote_bind_address=(mysql_config['mysql_host'], mysql_config['mysql_port']),
+            set_keepalive=10.0  # Keep the tunnel alive
+        )
+        tunnel.start()
         logger.info(f"SSH tunnel established successfully. Local bind port: {tunnel.local_bind_port}")
         
         logger.info("Connecting to MySQL database")
-        connection = pymysql.connect(
-            host='127.0.0.1',
-            port=tunnel.local_bind_port,
-            user=mysql_config['mysql_user'],
-            password=mysql_config['mysql_password'],
-            database=mysql_config['mysql_database']
-        )
-        
         try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                port=tunnel.local_bind_port,
+                user=mysql_config['mysql_user'],
+                password=mysql_config['mysql_password'],
+                database=mysql_config['mysql_database'],
+                client_flag=pymysql.constants.CLIENT.LOCAL_FILES,
+                connect_timeout=10
+            )
+            
             logger.info("Successfully connected to MySQL database")
             logger.info("Executing SQL query")
             df = pd.read_sql(QUERY, connection)
@@ -153,19 +173,30 @@ def execute_mysql_query_over_ssh(**context):
             return f"Task completed successfully. Retrieved {row_count} rows of data."
             
         except Exception as e:
-            logger.error(f"Error executing query: {str(e)}")
+            logger.error(f"MySQL Error: {str(e)}")
+            logger.error(f"MySQL Error Type: {type(e)}")
             raise
         finally:
-            connection.close()
-            logger.info("Database connection closed")
+            if 'connection' in locals():
+                connection.close()
+                logger.info("Database connection closed")
+    except Exception as e:
+        logger.error(f"SSH Tunnel Error: {str(e)}")
+        logger.error(f"SSH Tunnel Error Type: {type(e)}")
+        raise
+    finally:
+        if 'tunnel' in locals() and tunnel.is_active:
+            tunnel.stop()
+            logger.info("SSH tunnel closed")
 
+@task(outlets=[bq_dataset])
 def load_to_bigquery(**context):
     logger = LoggingMixin().log
     logger.info("Starting BigQuery load task")
     
     # Get data from XCom
     ti = context['task_instance']
-    data_dict = ti.xcom_pull(task_ids='execute_mysql_query', key='query_results')
+    data_dict = ti.xcom_pull(task_ids='execute_mysql_query_over_ssh', key='query_results')
     df = pd.DataFrame.from_dict(data_dict)
     
     # Normalize column names to lowercase
@@ -232,9 +263,6 @@ def load_to_bigquery(**context):
         logger.error(f"Error loading to BigQuery: {str(e)}")
         raise
 
-# Define the BigQuery asset
-bq_dataset = Dataset("bq://jse-datasphere/jse_seeds/financial_documents")
-
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -252,17 +280,15 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     catchup=False,
 ) as dag:
-
-    extract_task = PythonOperator(
-        task_id='execute_mysql_query',
-        python_callable=execute_mysql_query_over_ssh,
-    )
     
-    load_task = PythonOperator(
-        task_id='load_to_bigquery',
-        python_callable=load_to_bigquery,
-        outlets=[bq_dataset],
-    )
+    # Get configurations
+    config_task = get_connection_configs()
+    
+    # Extract data using SSH tunnel
+    extract_task = execute_mysql_query_over_ssh()
+    
+    # Load data to BigQuery
+    load_task = load_to_bigquery()
     
     # Set task dependencies
-    extract_task >> load_task 
+    config_task >> extract_task >> load_task 

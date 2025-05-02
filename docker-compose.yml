@@ -1,4 +1,3 @@
-version: '3'
 x-airflow-common: &airflow-common
   build: .
   environment:
@@ -16,9 +15,14 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__WORKERS: 4
     AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: 30
     AIRFLOW__WEBSERVER__WORKER_TIMEOUT: 120
-    AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: ('airflow.providers.mysql.hooks.mysql.MySqlHook', 'airflow.providers.ssh.hooks.ssh.SSHHook')
+    AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: airflow.providers.mysql.hooks.mysql.MySqlHook,airflow.providers.ssh.hooks.ssh.SSHHook
     AIRFLOW__CORE__TEST_CONNECTION: 'true'
     AIRFLOW__CORE__SECURITY_MANAGER_CLASS: 'airflow.www.security.AirflowSecurityManager'
+    ADMIN_USERNAME: ${ADMIN_USERNAME}
+    ADMIN_FIRSTNAME: ${ADMIN_FIRSTNAME}
+    ADMIN_LASTNAME: ${ADMIN_LASTNAME}
+    ADMIN_EMAIL: ${ADMIN_EMAIL}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -108,14 +112,17 @@ services:
       - |
         mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
         chown -R "${AIRFLOW_UID}:${AIRFLOW_GID}" /opt/airflow/{logs,dags,plugins}
-        exec airflow db init && \
-        airflow users create \
-          --username ${ADMIN_USERNAME} \
-          --firstname ${ADMIN_FIRSTNAME} \
-          --lastname ${ADMIN_LASTNAME} \
-          --email ${ADMIN_EMAIL} \
-          --role Admin \
-          --password ${ADMIN_PASSWORD}
+        airflow db migrate
+        airflow db check
+        if ! airflow users list | grep -q ${ADMIN_USERNAME}; then
+            airflow users create \
+                --username ${ADMIN_USERNAME} \
+                --firstname ${ADMIN_FIRSTNAME} \
+                --lastname ${ADMIN_LASTNAME} \
+                --email ${ADMIN_EMAIL} \
+                --role Admin \
+                --password ${ADMIN_PASSWORD}
+        fi
     environment:
       <<: *airflow-common-env
     depends_on:
