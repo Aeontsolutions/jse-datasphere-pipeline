@@ -142,7 +142,7 @@ def execute_mysql_query_over_ssh(**context):
         logger.info("Connecting to MySQL database")
         try:
             connection = pymysql.connect(
-                host='127.0.0.1',
+                host='localhost',
                 port=tunnel.local_bind_port,
                 user=mysql_config['mysql_user'],
                 password=mysql_config['mysql_password'],
