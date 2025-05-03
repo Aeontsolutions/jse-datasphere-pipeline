@@ -10,6 +10,7 @@ import pandas as pd
 import os
 from google.cloud import bigquery
 from airflow.datasets import Dataset
+from airflow.exceptions import AirflowSkipException
 
 # BigQuery configuration
 PROJECT_ID = "jse-datasphere"  # Replace with your GCP project ID
@@ -240,6 +241,26 @@ def load_to_bigquery(**context):
         client.create_table(table)
         logger.info(f"Created table {TABLE_ID}")
     
+    # Fetch existing IDs from BigQuery
+    logger.info("Fetching existing IDs from BigQuery table to identify new rows.")
+    existing_ids_query = f"SELECT id FROM `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`"
+    try:
+        existing_ids_df = client.query(existing_ids_query).to_dataframe()
+        existing_ids_set = set(existing_ids_df['id'].astype(str))
+        logger.info(f"Fetched {len(existing_ids_set)} existing IDs from BigQuery.")
+    except Exception as e:
+        logger.warning(f"Could not fetch existing IDs from BigQuery (table may be empty): {e}")
+        existing_ids_set = set()
+    
+    # Filter for new rows only
+    df['id'] = df['id'].astype(str)
+    new_rows_df = df[~df['id'].isin(existing_ids_set)]
+    logger.info(f"Identified {len(new_rows_df)} new rows to load.")
+    
+    if new_rows_df.empty:
+        logger.info("No new rows to load to BigQuery.")
+        raise AirflowSkipException("No new rows to load.")
+    
     # Load data to BigQuery
     job_config = bigquery.LoadJobConfig(
         schema=schema,
@@ -248,16 +269,16 @@ def load_to_bigquery(**context):
     
     try:
         # Convert post_date back to datetime for BigQuery
-        df['post_date'] = pd.to_datetime(df['post_date'])
+        new_rows_df['post_date'] = pd.to_datetime(new_rows_df['post_date'])
         
         # Load data
         job = client.load_table_from_dataframe(
-            df, table_ref, job_config=job_config
+            new_rows_df, table_ref, job_config=job_config
         )
         job.result()  # Wait for the job to complete
         
-        logger.info(f"Loaded {len(df)} rows to BigQuery table {table_ref}")
-        return f"Successfully loaded {len(df)} rows to BigQuery"
+        logger.info(f"Loaded {len(new_rows_df)} new rows to BigQuery table {table_ref}")
+        return f"Successfully loaded {len(new_rows_df)} new rows to BigQuery"
         
     except Exception as e:
         logger.error(f"Error loading to BigQuery: {str(e)}")
