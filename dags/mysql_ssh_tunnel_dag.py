@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from airflow import DAG
 from airflow.decorators import task
 from airflow.hooks.base import BaseHook
@@ -214,6 +214,7 @@ def load_to_bigquery(**context):
         bigquery.SchemaField("category_name", "STRING"),
         bigquery.SchemaField("post_date", "TIMESTAMP"),
         bigquery.SchemaField("post_status", "STRING"),
+        bigquery.SchemaField("loaded_at", "TIMESTAMP"),
     ]
     
     # Initialize BigQuery client
@@ -260,6 +261,12 @@ def load_to_bigquery(**context):
     if new_rows_df.empty:
         logger.info("No new rows to load to BigQuery.")
         raise AirflowSkipException("No new rows to load.")
+    
+    # Add loaded_at timestamp
+    new_rows_df['loaded_at'] = datetime.now(timezone.utc)
+    
+    # Convert id column back to integer for BigQuery
+    new_rows_df['id'] = new_rows_df['id'].astype('Int64')
     
     # Load data to BigQuery
     job_config = bigquery.LoadJobConfig(
