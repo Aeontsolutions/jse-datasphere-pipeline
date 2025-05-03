@@ -4,7 +4,7 @@ from airflow.decorators import task
 from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook
 import pandas as pd
 from airflow.datasets import Dataset
-
+from airflow.utils.log.logging_mixin import LoggingMixin
 PROJECT_ID = "jse-datasphere"
 DATASET_ID = "jse_seeds"
 TABLE_ID = "financial_documents"
@@ -14,12 +14,14 @@ bq_dataset = Dataset("bq://jse-datasphere/jse_seeds/financial_documents")
 
 @task
 def read_from_bigquery(**context):
+    logger = LoggingMixin().log
     bq_hook = BigQueryHook(gcp_conn_id='google_cloud_default')
     client = bq_hook.get_client()
     table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
     # Use Airflow macros for interval
     start = context['data_interval_start']
     end = context['data_interval_end']
+    logger.info(f"Reading rows from {start} to {end}")
     query = f'''
         SELECT * FROM `{table_ref}`
         WHERE loaded_at >= TIMESTAMP('{start}') AND loaded_at < TIMESTAMP('{end}')
