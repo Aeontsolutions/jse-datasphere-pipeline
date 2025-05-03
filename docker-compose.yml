@@ -23,6 +23,7 @@ x-airflow-common: &airflow-common
     ADMIN_LASTNAME: ${ADMIN_LASTNAME}
     ADMIN_EMAIL: ${ADMIN_EMAIL}
     ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    GEMINI_API_KEY: ${GEMINI_API_KEY}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
